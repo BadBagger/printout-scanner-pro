@@ -1,7 +1,29 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun signingProperty(name: String): String? = keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any { it.name.contains("Release") }
+    if (releaseRequested) {
+        val required = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missing = required.filter { signingProperty(it) == null }
+        if (missing.isNotEmpty()) {
+            throw GradleException("Release signing requires local keystore.properties with: ${missing.joinToString(", ")}")
+        }
+    }
 }
 
 android {
@@ -12,15 +34,24 @@ android {
         applicationId = "com.smithware.printoutscannerpro"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1-release-signed"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            signingProperty("storeFile")?.let { storeFile = file(it) }
+            storePassword = signingProperty("storePassword")
+            keyAlias = signingProperty("keyAlias")
+            keyPassword = signingProperty("keyPassword")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
